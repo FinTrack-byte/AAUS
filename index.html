@@ -39,7 +39,24 @@
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 transition-all duration-300">
-    <div class="min-h-screen p-4 md:p-8">
+    
+    <!-- Login Screen -->
+    <div id="login-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center p-4 z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 w-full max-w-md text-center">
+            <h1 class="text-3xl font-extrabold text-blue-800 dark:text-blue-200 mb-4">تسجيل الدخول</h1>
+            <p class="text-gray-600 dark:text-gray-400 mb-6">هذه منطقة خاصة، يرجى إدخال كلمة المرور للمتابعة.</p>
+            <form id="login-form">
+                <input type="password" id="password-input" placeholder="كلمة المرور" class="w-full p-3 mb-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-800 focus:border-transparent transition-colors" required>
+                <button type="submit" class="w-full px-4 py-3 bg-blue-800 text-white rounded-lg font-bold hover:bg-blue-900 transition-colors">
+                    دخول
+                </button>
+            </form>
+            <p id="login-error-message" class="text-red-500 mt-4 hidden">كلمة المرور خاطئة. حاول مرة أخرى.</p>
+        </div>
+    </div>
+    
+    <!-- Main Application Content -->
+    <div id="app-container" class="min-h-screen p-4 md:p-8 hidden">
 
         <!-- Logo and Header -->
         <header class="flex flex-col items-center justify-center text-center mb-6">
@@ -193,6 +210,11 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // UI elements
+        const appContainer = document.getElementById('app-container');
+        const loginScreen = document.getElementById('login-screen');
+        const loginForm = document.getElementById('login-form');
+        const passwordInput = document.getElementById('password-input');
+        const loginErrorMsg = document.getElementById('login-error-message');
         const customersView = document.getElementById('customers-view');
         const contractsView = document.getElementById('contracts-view');
         const viewCustomersBtn = document.getElementById('view-customers');
@@ -817,6 +839,7 @@
 
         langEnBtn.addEventListener('click', () => {
             currentLanguage = 'en';
+            document.getElementById('password-input').placeholder = 'Password';
             updateUIForLanguage();
         });
 
@@ -826,8 +849,20 @@
             updateUIForLanguage();
         });
 
-        // Initialize the app
-        initializeFirebase();
+        // Login Logic
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const password = passwordInput.value;
+            const correctPassword = 'Ahmed@100100'; // Your secret password
+            if (password === correctPassword) {
+                loginScreen.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                initializeFirebase();
+            } else {
+                loginErrorMsg.classList.remove('hidden');
+                passwordInput.value = '';
+            }
+        });
 
     </script>
 </body>
