@@ -12,7 +12,7 @@
             transition: background-color 0.3s, color 0.3s;
         }
         .bg-blue-800 { background-color: #1e3a8a; }
-        .hover\\:bg-blue-900:hover { background-color: #1e40af; }
+        .hover\:bg-blue-900:hover { background-color: #1e40af; }
         .text-blue-800 { color: #1e3a8a; }
         .text-blue-200 { color: #bfdbfe; }
         .dark-mode {
@@ -36,6 +36,18 @@
         .dark-mode .text-gray-500 {
             color: #94a3b8;
         }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 transition-all duration-300">
@@ -55,6 +67,12 @@
         </div>
     </div>
     
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex flex-col items-center justify-center p-4 z-40 hidden">
+        <div class="spinner"></div>
+        <p class="mt-4 text-white text-lg font-semibold">الرجاء الانتظار حتى يتم تحميل النظام...</p>
+    </div>
+
     <!-- Main Application Content -->
     <div id="app-container" class="min-h-screen p-4 md:p-8 hidden">
 
@@ -212,6 +230,7 @@
         // UI elements
         const appContainer = document.getElementById('app-container');
         const loginScreen = document.getElementById('login-screen');
+        const loadingScreen = document.getElementById('loading-screen');
         const loginForm = document.getElementById('login-form');
         const passwordInput = document.getElementById('password-input');
         const loginErrorMsg = document.getElementById('login-error-message');
@@ -438,6 +457,7 @@
 
         // Firebase initialization and data fetching
         async function initializeFirebase() {
+            loadingScreen.classList.remove('hidden');
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -458,11 +478,13 @@
                             await signInAnonymously(auth);
                         }
                     }
+                    loadingScreen.classList.add('hidden');
                 });
 
                 return authStateChangeUnsubscribe;
             } catch (e) {
                 console.error("Firebase initialization error: ", e);
+                loadingScreen.classList.add('hidden');
             }
         }
 
