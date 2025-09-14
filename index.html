@@ -52,25 +52,12 @@
 </head>
 <body class="bg-gray-100 text-gray-800 transition-all duration-300">
     
-    <!-- Login Screen -->
-    <div id="login-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center p-4 z-50">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 w-full max-w-md text-center">
-            <h1 class="text-3xl font-extrabold text-blue-800 dark:text-blue-200 mb-4">تسجيل الدخول</h1>
-            <p class="text-gray-600 dark:text-gray-400 mb-6">هذه منطقة خاصة، يرجى إدخال كلمة المرور للمتابعة.</p>
-            <form id="login-form">
-                <input type="password" id="password-input" placeholder="كلمة المرور" class="w-full p-3 mb-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-blue-800 focus:border-transparent transition-colors" required>
-                <button type="submit" class="w-full px-4 py-3 bg-blue-800 text-white rounded-lg font-bold hover:bg-blue-900 transition-colors">
-                    دخول
-                </button>
-            </form>
-            <p id="login-error-message" class="text-red-500 mt-4 hidden">كلمة المرور خاطئة. حاول مرة أخرى.</p>
-        </div>
-    </div>
-    
     <!-- Loading Screen -->
-    <div id="loading-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex flex-col items-center justify-center p-4 z-40 hidden">
+    <div id="loading-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex flex-col items-center justify-center p-4 z-40">
         <div class="spinner"></div>
-        <p class="mt-4 text-white text-lg font-semibold">الرجاء الانتظار حتى يتم تحميل النظام...</p>
+        <p class="mt-4 text-white text-lg font-semibold" id="loadingMessage">
+            الرجاء الانتظار حتى يتم تحميل النظام...
+        </p>
     </div>
 
     <!-- Main Application Content -->
@@ -83,7 +70,7 @@
                 نظام إدارة العملاء
             </h1>
             <p class="text-sm italic text-gray-600 dark:text-gray-400" id="userIdLabel">
-                معرف المستخدم: 
+                معرف المستخدم: لا يوجد
             </p>
             <div class="flex space-x-2 mt-4">
                 <button id="lang-ar" class="p-2 rounded-lg transition-colors bg-blue-800 text-white">
@@ -215,25 +202,31 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        setLogLevel('debug');
-
-
-        // Global variables provided by the Canvas environment.
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, getDocs, setDoc, query, orderBy, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+        
+        // --- Firebase Configuration and Initialization ---
+        // Use provided global variables for app initialization
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyC15Rb8pukWGcdDlmgEig8YGiIG27RGxJc",
+            authDomain: "aaus-654c4.firebaseapp.com",
+            databaseURL: "https://aaus-654c4-default-rtdb.firebaseio.com",
+            projectId: "aaus-654c4",
+            storageBucket: "aaus-654c4.firebasestorage.app",
+            messagingSenderId: "976513022962",
+            appId: "1:976513022962:web:35f5ec4acfa0efef6e896b",
+            measurementId: "G-FLCXMFYSJT"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setLogLevel('debug'); // Enable debug logging for Firestore
 
-        // UI elements
+        // --- UI Elements and State ---
         const appContainer = document.getElementById('app-container');
-        const loginScreen = document.getElementById('login-screen');
         const loadingScreen = document.getElementById('loading-screen');
-        const loginForm = document.getElementById('login-form');
-        const passwordInput = document.getElementById('password-input');
-        const loginErrorMsg = document.getElementById('login-error-message');
         const customersView = document.getElementById('customers-view');
         const contractsView = document.getElementById('contracts-view');
         const viewCustomersBtn = document.getElementById('view-customers');
@@ -258,17 +251,15 @@
         const promptOKBtn = document.getElementById('promptOKBtn');
         const promptCancelBtn = document.getElementById('promptCancelBtn');
 
-
-        // State variables
-        let db, auth, userId, isAuthReady = false;
         let customers = [];
         let contracts = [];
         let editingCustomer = null;
         let currentLanguage = 'ar';
         let isDarkMode = false;
+        let userId = null;
+        let customersCollectionRef;
+        let contractsCollectionRef;
         
-        let customerCollectionPath, contractsCollectionPath;
-
         // Translations
         const translations = {
             ar: {
@@ -307,7 +298,8 @@
                 file: 'ملف',
                 loadingMessage: 'الرجاء الانتظار حتى يتم تحميل النظام.',
                 enterNewName: 'ادخل الاسم الجديد:',
-                enterNewPhone: 'ادخل رقم الهاتف الجديد:'
+                enterNewPhone: 'ادخل رقم الهاتف الجديد:',
+                viewFile: 'عرض الملف'
             },
             en: {
                 appTitle: 'Customer Management System',
@@ -345,11 +337,21 @@
                 file: 'File',
                 loadingMessage: 'Please wait for the system to load.',
                 enterNewName: 'Enter new name:',
-                enterNewPhone: 'Enter new phone:'
+                enterNewPhone: 'Enter new phone:',
+                viewFile: 'View File'
             }
         };
 
         const t = (key) => translations[currentLanguage][key];
+        
+        // Helper to get correct Firestore collection path
+        function getCustomerCollection(id) {
+            return collection(db, `artifacts/${appId}/users/${id}/customers`);
+        }
+
+        function getContractCollection(id) {
+            return collection(db, `artifacts/${appId}/users/${id}/contracts`);
+        }
 
         // Function to show a custom modal.
         function showModal(title, content) {
@@ -423,7 +425,6 @@
         // Update UI based on language
         function updateUIForLanguage() {
             document.getElementById('appTitle').textContent = t('appTitle');
-            document.getElementById('userIdLabel').textContent = `${t('userIdLabel')}: ${userId}`;
             document.getElementById('customersViewTitle').textContent = t('customersViewTitle');
             document.getElementById('contractsViewTitle').textContent = t('contractsViewTitle');
             document.getElementById('addCustomerTitle').textContent = t('addCustomerTitle');
@@ -455,55 +456,51 @@
             renderContracts();
         }
 
-        // Firebase initialization and data fetching
-        async function initializeFirebase() {
-            loadingScreen.classList.remove('hidden');
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                const authStateChangeUnsubscribe = onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        isAuthReady = true;
-                        customerCollectionPath = `artifacts/${appId}/users/${userId}/customer_management`;
-                        contractsCollectionPath = `artifacts/${appId}/users/${userId}/contracts`;
-                        updateUIForLanguage();
-                        attachListeners();
-                    } else {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    }
-                    loadingScreen.classList.add('hidden');
+        // --- Data Fetching and Persistence (Firebase Firestore) ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                document.getElementById('userIdLabel').textContent = `${t('userIdLabel')}: ${userId}`;
+                appContainer.classList.remove('hidden');
+                loadingScreen.classList.add('hidden');
+
+                customersCollectionRef = getCustomerCollection(userId);
+                contractsCollectionRef = getContractCollection(userId);
+
+                // Setup real-time listeners for both collections
+                onSnapshot(customersCollectionRef, (snapshot) => {
+                    customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    customers.sort((a, b) => a.code - b.code);
+                    renderCustomers();
+                }, (error) => {
+                    console.error("Error fetching customers: ", error);
                 });
 
-                return authStateChangeUnsubscribe;
-            } catch (e) {
-                console.error("Firebase initialization error: ", e);
+                onSnapshot(contractsCollectionRef, (snapshot) => {
+                    contracts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderContracts();
+                }, (error) => {
+                    console.error("Error fetching contracts: ", error);
+                });
+            }
+        });
+
+        // Initial Authentication
+        async function authenticate() {
+            try {
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Authentication Error:", error);
+                showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'فشل الاتصال بالنظام.' : 'Failed to connect to the system.'));
                 loadingScreen.classList.add('hidden');
             }
         }
-
-        function attachListeners() {
-            onSnapshot(collection(db, customerCollectionPath), (snapshot) => {
-                customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                customers.sort((a, b) => a.code - b.code);
-                renderCustomers();
-            }, (error) => {
-                console.error("Error fetching customers:", error);
-            });
-
-            onSnapshot(collection(db, contractsCollectionPath), (snapshot) => {
-                contracts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderContracts();
-            }, (error) => {
-                console.error("Error fetching contracts:", error);
-            });
-        }
+        authenticate();
 
         // Render customers table
         function renderCustomers() {
@@ -519,13 +516,13 @@
                         <td class="px-6 py-4 whitespace-nowrap">${customer.customerName}</td>
                         <td class="px-6 py-4 whitespace-nowrap">${customer.customerPhone}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            ${customer.drawings ? `<a href="#" onclick="viewFile(event, '${customer.drawings}')" class="text-blue-800 hover:underline">✓ ${t('file')}</a>` : `<label class="cursor-pointer text-blue-800 hover:underline">
+                            ${customer.drawings ? `<button onclick="viewFile(event, '${customer.id}', 'drawings')" class="text-blue-800 hover:underline">${t('viewFile')}</button>` : `<label class="cursor-pointer text-blue-800 hover:underline">
                                 ${t('uploadFile')}
                                 <input type="file" class="hidden" data-id="${customer.id}" data-type="drawings" onchange="handleFileUpload(event)">
                             </label>`}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            ${customer.quotation ? `<a href="#" onclick="viewFile(event, '${customer.quotation}')" class="text-blue-800 hover:underline">✓ ${t('file')}</a>` : `<label class="cursor-pointer text-blue-800 hover:underline">
+                            ${customer.quotation ? `<button onclick="viewFile(event, '${customer.id}', 'quotation')" class="text-blue-800 hover:underline">${t('viewFile')}</button>` : `<label class="cursor-pointer text-blue-800 hover:underline">
                                 ${t('uploadFile')}
                                 <input type="file" class="hidden" data-id="${customer.id}" data-type="quotation" onchange="handleFileUpload(event)">
                             </label>`}
@@ -566,13 +563,13 @@
                         <td class="px-6 py-4 whitespace-nowrap">${contract.customerPhone}</td>
                         <td class="px-6 py-4 whitespace-nowrap">${contract.salesperson}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            ${contract.contractImage ? `<a href="#" onclick="viewFile(event, '${contract.contractImage}')" class="text-blue-800 hover:underline">✓ ${t('file')}</a>` : `<label class="cursor-pointer text-blue-800 hover:underline">
+                            ${contract.contractImage ? `<button onclick="viewFile(event, '${contract.id}', 'contractImage')" class="text-blue-800 hover:underline">${t('viewFile')}</button>` : `<label class="cursor-pointer text-blue-800 hover:underline">
                                 ${t('uploadFile')}
                                 <input type="file" class="hidden" data-id="${contract.id}" data-type="contractImage" onchange="handleContractFileUpload(event)">
                             </label>`}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            ${contract.accountsImage ? `<a href="#" onclick="viewFile(event, '${contract.accountsImage}')" class="text-blue-800 hover:underline">✓ ${t('file')}</a>` : `<label class="cursor-pointer text-blue-800 hover:underline">
+                            ${contract.accountsImage ? `<button onclick="viewFile(event, '${contract.id}', 'accountsImage')" class="text-blue-800 hover:underline">${t('viewFile')}</button>` : `<label class="cursor-pointer text-blue-800 hover:underline">
                                 ${t('uploadFile')}
                                 <input type="file" class="hidden" data-id="${contract.id}" data-type="accountsImage" onchange="handleContractFileUpload(event)">
                             </label>`}
@@ -595,72 +592,62 @@
 
         // Add or update customer
         addOrUpdateBtn.addEventListener('click', async () => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
-
             const customerName = customerNameInput.value.trim();
             const customerPhone = customerPhoneInput.value.trim();
             const salesperson = salespersonSelect.value;
-            const nextCode = customers.length > 0 ? Math.max(...customers.map(c => c.code)) + 1 : 1;
-            const customerCode = editingCustomer ? customers.find(c => c.id === editingCustomer).code : nextCode;
 
             if (!customerName || !customerPhone || !salesperson) {
                 showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'الرجاء إكمال جميع الحقول المطلوبة.' : 'Please complete all required fields.'));
                 return;
             }
 
-            if (!editingCustomer && customers.some(c => c.code === customerCode)) {
-                showModal(t('modalTitle'), t('codeExists'));
-                return;
-            }
-
-            const customerData = {
-                code: customerCode,
-                customerName,
-                customerPhone,
-                salesperson,
-                drawings: '',
-                quotation: ''
-            };
-
-            try {
-                if (editingCustomer) {
-                    const docRef = doc(db, customerCollectionPath, editingCustomer);
-                    await updateDoc(docRef, customerData);
-                    editingCustomer = null;
-                } else {
-                    await addDoc(collection(db, customerCollectionPath), customerData);
+            if (editingCustomer) {
+                try {
+                    await updateDoc(doc(customersCollectionRef, editingCustomer), {
+                        customerName,
+                        customerPhone,
+                        salesperson
+                    });
+                } catch (e) {
+                    console.error("Error updating document: ", e);
                 }
-                clearForm();
-            } catch (e) {
-                console.error("Error adding/updating customer:", e);
-                showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'حدث خطأ. الرجاء التحقق من اتصالك وإعادة المحاولة.' : 'An error occurred. Please check your connection and try again.'));
+            } else {
+                try {
+                    const nextCode = customers.length > 0 ? Math.max(...customers.map(c => c.code)) + 1 : 1;
+                    await addDoc(customersCollectionRef, {
+                        code: nextCode,
+                        customerName,
+                        customerPhone,
+                        salesperson,
+                        drawings: '',
+                        quotation: ''
+                    });
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                }
             }
+            clearForm();
         });
 
         // Delete a customer
-        window.deleteCustomer = async (id) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
+        window.deleteCustomer = (id) => {
             showConfirmModal(t('deleteMessage'), async () => {
                 try {
-                    await deleteDoc(doc(db, customerCollectionPath, id));
+                    await deleteDoc(doc(customersCollectionRef, id));
+                    // Check if a contract with the same id exists and delete it as well
+                    const contractDocRef = doc(contractsCollectionRef, id);
+                    const contractDoc = await getDoc(contractDocRef);
+                    if (contractDoc.exists()) {
+                       await deleteDoc(contractDocRef);
+                    }
                 } catch (e) {
-                    console.error("Error deleting customer:", e);
+                    console.error("Error removing document: ", e);
                 }
             });
         };
 
         // Edit customer
         window.editCustomer = (id) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
             editingCustomer = id;
             const customer = customers.find(c => c.id === id);
             if (customer) {
@@ -686,48 +673,55 @@
             cancelEditBtn.classList.add('hidden');
         }
 
-        // Handle file uploads
-        window.handleFileUpload = async (e) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
+        // Handle file uploads (still uses localStorage for simplicity, as Firebase Storage requires more complex setup)
+        // Note: For a production app, you should use Firebase Storage for file uploads.
+        window.handleFileUpload = (e) => {
             const file = e.target.files[0];
             const customerId = e.target.dataset.id;
             const type = e.target.dataset.type;
-            if (!file) return;
+            if (!file) {
+                showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'لم يتم تحديد ملف.' : 'No file selected.'));
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = async function(event) {
-                const base64String = event.target.result;
-                const fileName = file.name;
-                const localStorageKey = `${customerId}_${type}`;
-                localStorage.setItem(localStorageKey, base64String);
-
-                const updateField = type === 'drawings' ? 'drawings' : 'quotation';
-                const docRef = doc(db, customerCollectionPath, customerId);
-                
+                const fileData = {
+                    dataUrl: event.target.result,
+                    name: file.name,
+                    fileType: file.type
+                };
                 try {
-                    await updateDoc(docRef, { [updateField]: fileName });
-                } catch (e) {
-                    console.error("Error updating document with file name:", e);
+                    localStorage.setItem(`${customerId}_${type}`, JSON.stringify(fileData));
+                    await updateDoc(doc(customersCollectionRef, customerId), {
+                        [type]: file.name
+                    });
+                } catch (error) {
+                    console.error("Error saving file data or updating document: ", error);
+                    showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'حدث خطأ أثناء تحميل الملف.' : 'An error occurred while uploading the file.'));
                 }
             };
             reader.readAsDataURL(file);
         };
 
         // Function to view files from local storage
-        window.viewFile = (event, fileName) => {
+        window.viewFile = (event, id, type) => {
             event.preventDefault();
-            const customerId = event.target.closest('tr').dataset.id;
-            const type = event.target.closest('td').querySelector('input')?.dataset.type;
-            const localStorageKey = `${customerId}_${type}`;
-            const fileDataUrl = localStorage.getItem(localStorageKey);
-            if (fileDataUrl) {
-                const isImage = fileDataUrl.startsWith('data:image');
-                const content = isImage 
-                    ? `<img src="${fileDataUrl}" alt="${t('file')}" class="max-w-full h-auto rounded-lg shadow-md mb-4"/>`
-                    : `<p>${t('file')}: ${fileName}</p>`;
+            const fileDataString = localStorage.getItem(`${id}_${type}`);
+            
+            if (fileDataString) {
+                const fileData = JSON.parse(fileDataString);
+                let content = '';
+                let title = fileData.name || t('viewFile');
+                const fileType = fileData.fileType || '';
+
+                if (fileType.startsWith('image/')) {
+                    content = `<img src="${fileData.dataUrl}" alt="${title}" class="max-w-full h-auto rounded-lg shadow-md"/>`;
+                } else if (fileType.startsWith('text/')) {
+                    content = `<pre class="whitespace-pre-wrap">${atob(fileData.dataUrl.split(',')[1])}</pre>`;
+                } else {
+                    content = `<p class="text-lg">لا يوجد معاينة لهذا النوع من الملفات.</p><a href="${fileData.dataUrl}" download="${title}" class="mt-4 inline-block bg-blue-800 text-white px-4 py-2 rounded-lg hover:bg-blue-900 transition-colors">${t('downloadFile')}</a>`;
+                }
                 showModal(t('modalTitle'), content);
             } else {
                 showModal(t('modalTitle'), t(currentLanguage === 'ar' ? 'لم يتم العثور على الملف.' : 'File not found.'));
@@ -736,41 +730,26 @@
 
         // Transition to contracts page
         window.goToContract = async (id) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
             const customer = customers.find(c => c.id === id);
             if (customer) {
-                const contractsRef = collection(db, contractsCollectionPath);
-                const q = query(contractsRef, where("code", "==", customer.code));
-                const querySnapshot = await getDocs(q);
-
-                if (querySnapshot.empty) {
-                     const contractData = {
+                const existingContractRef = doc(contractsCollectionRef, id);
+                const existingContract = await getDoc(existingContractRef);
+                if (!existingContract.exists()) {
+                    await setDoc(existingContractRef, {
                         code: customer.code,
                         customerName: customer.customerName,
                         customerPhone: customer.customerPhone,
                         salesperson: customer.salesperson,
                         contractImage: '',
                         accountsImage: ''
-                    };
-                    try {
-                        await addDoc(contractsRef, contractData);
-                    } catch (e) {
-                        console.error("Error creating contract:", e);
-                    }
+                    });
                 }
                 setView('contracts');
             }
         };
 
         // Contracts file upload
-        window.handleContractFileUpload = async (e) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
+        window.handleContractFileUpload = (e) => {
             const file = e.target.files[0];
             const contractId = e.target.dataset.id;
             const type = e.target.dataset.type;
@@ -778,38 +757,37 @@
 
             const reader = new FileReader();
             reader.onload = async function(event) {
-                const base64String = event.target.result;
-                const fileName = file.name;
-                const localStorageKey = `${contractId}_${type}`;
-                localStorage.setItem(localStorageKey, base64String);
-
-                const updateField = type === 'contractImage' ? 'contractImage' : 'accountsImage';
-                const docRef = doc(db, contractsCollectionPath, contractId);
-
+                const fileData = {
+                    dataUrl: event.target.result,
+                    name: file.name,
+                    fileType: file.type
+                };
+                localStorage.setItem(`${contractId}_${type}`, JSON.stringify(fileData));
+                
                 try {
-                    await updateDoc(docRef, { [updateField]: fileName });
+                    await updateDoc(doc(contractsCollectionRef, contractId), {
+                        [type]: file.name
+                    });
                 } catch (e) {
-                    console.error("Error updating contract document with file name:", e);
+                    console.error("Error updating contract document with file info: ", e);
                 }
             };
             reader.readAsDataURL(file);
         };
 
         // Edit contract
-        window.editContract = async (id) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
+        window.editContract = (id) => {
             const contract = contracts.find(c => c.id === id);
             if (contract) {
                 showPromptModal(t('editBtn'), t('enterNewName'), t('enterNewPhone'), async (newName, newPhone) => {
                     if (newName !== null && newPhone !== null) {
                         try {
-                            const docRef = doc(db, contractsCollectionPath, id);
-                            await updateDoc(docRef, { customerName: newName, customerPhone: newPhone });
+                            await updateDoc(doc(contractsCollectionRef, id), {
+                                customerName: newName,
+                                customerPhone: newPhone
+                            });
                         } catch (e) {
-                            console.error("Error updating contract:", e);
+                            console.error("Error updating contract: ", e);
                         }
                     }
                 });
@@ -817,16 +795,12 @@
         };
 
         // Delete contract
-        window.deleteContract = async (id) => {
-            if (!isAuthReady) {
-                showModal(t('modalTitle'), t('loadingMessage'));
-                return;
-            }
+        window.deleteContract = (id) => {
             showConfirmModal(t('deleteContractMessage'), async () => {
                 try {
-                    await deleteDoc(doc(db, contractsCollectionPath, id));
+                    await deleteDoc(doc(contractsCollectionRef, id));
                 } catch (e) {
-                    console.error("Error deleting contract:", e);
+                    console.error("Error removing contract document: ", e);
                 }
             });
         };
@@ -861,7 +835,6 @@
 
         langEnBtn.addEventListener('click', () => {
             currentLanguage = 'en';
-            document.getElementById('password-input').placeholder = 'Password';
             updateUIForLanguage();
         });
 
@@ -871,21 +844,8 @@
             updateUIForLanguage();
         });
 
-        // Login Logic
-        loginForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const password = passwordInput.value;
-            const correctPassword = 'Ahmed@100100'; // Your secret password
-            if (password === correctPassword) {
-                loginScreen.classList.add('hidden');
-                appContainer.classList.remove('hidden');
-                initializeFirebase();
-            } else {
-                loginErrorMsg.classList.remove('hidden');
-                passwordInput.value = '';
-            }
-        });
-
+        updateUIForLanguage();
+        
     </script>
 </body>
 </html>
